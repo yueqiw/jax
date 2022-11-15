@@ -13,9 +13,11 @@ kernelspec:
 
 +++ {"id": "PxHrg4Cjuapm"}
 
-# `jax.Array`
+# Parallelism with JAX
 
 +++ {"id": "pFtQjv4SzHRj"}
+
+**This tutorial discusses parallelism via `jax.Array`, the unified array object model available in JAX v0.4.0 and newer.**
 
 **The features required by `jax.Array` are not supported by the Colab TPU runtime at this time.**
 
@@ -43,11 +45,11 @@ jax.config.update('jax_array', True)
 
 +++ {"id": "3f37ca93"}
 
-### `Sharding` describes how array values are laid out in memory across devices
+## `Sharding` describes how array values are laid out in memory across devices
 
 +++ {"id": "W6HsXauGxL6w"}
 
-#### Sharding basics, and the `PositionalSharding` subclass
+### Sharding basics, and the `PositionalSharding` subclass
 
 +++ {"id": "NWDyp_EjVHkg"}
 
@@ -283,7 +285,7 @@ jax.debug.visualize_array_sharding(y)
 
 +++ {"id": "D31t5POXxHHJ"}
 
-#### `NamedSharding` gives a way to express shardings with names
+### `NamedSharding` gives a way to express shardings with names
 
 +++ {"id": "ayMKWeTmxl-X"}
 
