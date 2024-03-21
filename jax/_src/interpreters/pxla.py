@@ -2684,6 +2684,13 @@ def _cached_compilation(computation, name, mesh, spmd_lowering,
 
   fdo_profile = (None if compiler_options is None else
                  compiler_options.pop("fdo_profile", None))
+  pgle_data_collecting_retries = (
+      0 if compiler_options is None
+      else compiler_options.pop("pgle_data_collecting_retries", 0)
+  )
+
+  if config.pgle_data_collecting_retries.value:
+    pgle_data_collecting_retries = config.pgle_data_collecting_retries.value
 
   compile_options = compiler.get_compile_options(
       num_replicas=num_replicas,
@@ -2694,6 +2701,7 @@ def _cached_compilation(computation, name, mesh, spmd_lowering,
       env_options_overrides=compiler_options,
       fdo_profile=fdo_profile,
       detailed_logging=compiler.use_detailed_logging(computation),
+      pgle_data_collecting_retries=pgle_data_collecting_retries,
       backend=backend,
   )
 

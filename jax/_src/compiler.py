@@ -103,6 +103,7 @@ def get_compile_options(
     env_options_overrides: dict[str, str] | None = None,
     fdo_profile: bytes | None = None,
     detailed_logging: bool = True,
+    pgle_data_collecting_retries: int = 0,
     backend: xc.Client | None = None,
 ) -> xc.CompileOptions:
   """Returns the compile options to use, as derived from flag values.
@@ -125,13 +126,16 @@ def get_compile_options(
     env_options_overrides: dict of additional options parsed by the compiler
     fdo_profile: Optional profile for feedback-directed optimization passed to
       XLA.
-    detailed_logging: Is this an "interesting" computation about which XLA
-      would be wise to log compilation information?
+    detailed_logging: Is this an "interesting" computation about which XLA would
+      be wise to log compilation information?
+    pgle_data_collecting_retries: Specifies amount of retries to collect
+      performance data for profile guided latency estimator.
     backend: the client, if available.
   """
   compile_options = xc.CompileOptions()
   compile_options.num_replicas = num_replicas
   compile_options.num_partitions = num_partitions
+  compile_options.pgle_data_collecting_retries = pgle_data_collecting_retries
   build_options = compile_options.executable_build_options
   build_options.use_spmd_partitioning = use_spmd_partitioning
   build_options.use_auto_spmd_partitioning = use_auto_spmd_partitioning
@@ -229,12 +233,20 @@ def backend_compile(
   # we use a separate function call to ensure that XLA compilation appears
   # separately in Python profiling results
   if host_callbacks:
-    return backend.compile(built_c, compile_options=options,
-                           host_callbacks=host_callbacks)
+    return backend.compile(
+        built_c,
+        compile_options=options,
+        host_callbacks=host_callbacks,
+        distributed_client=distributed.global_state.client,
+    )
   # Some backends don't have `host_callbacks` option yet
   # TODO(sharadmv): remove this fallback when all backends allow `compile`
   # to take in `host_callbacks`
-  return backend.compile(built_c, compile_options=options)
+  return backend.compile(
+      built_c,
+      compile_options=options,
+      distributed_client=distributed.global_state.client,
+  )
 
 def compile_or_get_cached(
     backend: xc.Client,

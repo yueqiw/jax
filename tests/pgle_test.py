@@ -21,36 +21,70 @@ import tempfile
 
 from absl.testing import absltest
 import jax
-from jax import config
+from jax._src import config
 from jax._src import test_util as jtu
-from jax.sharding import NamedSharding
+from jax._src.pjit import pjit
 from jax.experimental import profiler as exp_profiler
 import jax.numpy as jnp
+from jax.sharding import NamedSharding
 from jax.sharding import PartitionSpec as P
 import numpy as np
 
 config.parse_flags_with_absl()
-
-
 @jtu.pytest_mark_if_available('multiaccelerator')
 class PgleTest(jtu.JaxTestCase):
 
-  def testPassingFDOProfile(self):
+  def test_auto_pgle(self):
     mesh = jtu.create_global_mesh((2,), ('x',))
+
     @partial(
         jax.jit,
-        in_shardings=NamedSharding(mesh, P('x',)),
-        out_shardings=NamedSharding(mesh, P('x',)),
+        in_shardings=NamedSharding(mesh, P('x')),
+        out_shardings=NamedSharding(mesh, P('x')),
     )
     def f(x, y):
-      z = x @ y
-      return z @ y
+      return x @ y
 
     shape = (16, 16)
     x = jnp.arange(math.prod(shape)).reshape(shape).astype(np.float32)
     y = x + 1
-    f_lowered = f.lower(x, y)
-    compiled = f_lowered.compile()
+
+    with config.pgle_data_collecting_retries(2):
+      f_lowered = f.lower(x, y)
+      compiled = f_lowered.compile()
+
+    for _ in range(10):
+      self.assertArraysEqual(compiled(x, y), x @ y)
+
+  def test_auto_pgle_compile_cache_miss(self):
+      f = pjit(lambda x: x + x)
+      x = jnp.zeros((2, 2))
+      with jtu.count_pjit_cpp_cache_miss() as count:
+        with config.pgle_data_collecting_retries(2):
+          f(x)
+
+        with config.pgle_data_collecting_retries(3):
+          f(x)
+      self.assertEqual(count[0], 2)
+
+  def test_passing_fdo_profile(self):
+    mesh = jtu.create_global_mesh((2,), ('x',))
+
+    @partial(
+        jax.jit,
+        in_shardings=NamedSharding(mesh, P('x')),
+        out_shardings=NamedSharding(mesh, P('x')),
+    )
+    def f(x, y):
+      return x @ y
+
+    shape = (16, 16)
+    x = jnp.arange(math.prod(shape)).reshape(shape).astype(np.float32)
+    y = x + 1
+
+    with config.pgle_data_collecting_retries(0):
+      f_lowered = f.lower(x, y)
+      compiled = f_lowered.compile()
 
     with tempfile.TemporaryDirectory() as tmpdir:
       jax.profiler.start_trace(tmpdir)
