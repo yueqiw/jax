@@ -106,6 +106,13 @@ _CPU_ENABLE_GLOO_COLLECTIVES = config.DEFINE_bool(
     help="If True, enable cross-process collectives on CPU using Gloo.",
 )
 
+_CPU_ENABLE_ASYNC_DISPATCH = config.DEFINE_bool(
+    name="jax_cpu_enable_async_dispatch",
+    default=True,
+    help="Only effective when device count is 1. If False, run computations"
+    "inline without async dispatch.",
+)
+
 
 # Warn the user if they call fork(), because it's not going to go well for them.
 def _at_fork():
@@ -226,7 +233,20 @@ def register_backend_factory(name: str, factory: BackendFactory, *,
 
 
 def make_cpu_client() -> xla_client.Client:
-  if xla_extension_version >= 223:
+  if xla_extension_version >= 257:
+    collectives: xla_client._xla.CpuCollectives | None = None
+    if _CPU_ENABLE_GLOO_COLLECTIVES.value:
+      collectives = xla_client._xla.make_gloo_tcp_collectives(  # type: ignore
+        distributed_client=distributed.global_state.client,
+      )
+    return xla_client.make_cpu_client(  # type: ignore
+      asynchronous=_CPU_ENABLE_ASYNC_DISPATCH.value,
+      distributed_client=distributed.global_state.client,
+      node_id=distributed.global_state.process_id,
+      num_nodes=distributed.global_state.num_processes,
+      collectives=collectives,
+    )
+  elif xla_extension_version >= 223:
     collectives: xla_client._xla.CpuCollectives | None = None
     if _CPU_ENABLE_GLOO_COLLECTIVES.value:
       collectives = xla_client._xla.make_gloo_tcp_collectives(  # type: ignore
