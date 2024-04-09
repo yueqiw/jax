@@ -658,15 +658,22 @@ LogicalResult ext_op_rule_impl(RewriteContext &ctx, OpTy op,
   const auto result_ty = cast<VectorType>(op.getResult().getType());
   auto source = cast<TypedValue<VectorType>>(op.getIn());
   const auto source_ty = source.getType();
+  auto output_vregs_shape =
+      layout_out.tileArrayShape(result_ty.getShape(), ctx.target_shape);
   if (layout_out.bitwidth() != 32) {
     return op.emitOpError(
         "Not implemented: Only extensions to 32-bit supported");
   }
   FAILUREOR_ASSIGN_OR_RETURN(
-      const xla::Array<Value> input_vregs,
+      xla::Array<Value> input_vregs,
       disassemble(builder, layout_in, source, ctx.target_shape));
-  xla::Array<Value> output_vregs(
-      layout_out.tileArrayShape(result_ty.getShape(), ctx.target_shape));
+  xla::Array<Value> output_vregs(output_vregs_shape);
+  if (layout_in.implicit_dim() == VectorLayout::ImplicitDim::kMinor) {
+    input_vregs.Reshape(layout_in.tileArrayImplicitShape(source_ty.getShape(),
+                                                         ctx.target_shape));
+    output_vregs.Reshape(layout_out.tileArrayImplicitShape(result_ty.getShape(),
+                                                           ctx.target_shape));
+  }
   FAILUREOR_ASSIGN_OR_RETURN(
       const VectorType res_vreg_ty,
       getNativeVregType(result_ty.getElementType(), ctx.target_shape));
@@ -677,6 +684,7 @@ LogicalResult ext_op_rule_impl(RewriteContext &ctx, OpTy op,
     return op.emitOpError("Not implemented: Change of offsets during the cast");
   }
   switch (layout_in.implicit_dim()) {
+    case VectorLayout::ImplicitDim::kMinor:
     case VectorLayout::ImplicitDim::kNone: {
       if (layout_in.tiling() != layout_out.tiling()) {
         return op.emitOpError(
@@ -696,9 +704,6 @@ LogicalResult ext_op_rule_impl(RewriteContext &ctx, OpTy op,
             res_vreg_ty, input_vregs(input_vreg_idxs), vreg_part);
       });
     } break;
-    case VectorLayout::ImplicitDim::kMinor:
-      return op.emitOpError(
-          "Not implemented: Only casts of lane-oriented values supported");
     case VectorLayout::ImplicitDim::kSecondMinor: {
       auto is_one_tile = [](VectorType vty, VectorLayout layout) {
         auto implicit_shape = layout.implicitShape(vty.getShape());
@@ -721,6 +726,9 @@ LogicalResult ext_op_rule_impl(RewriteContext &ctx, OpTy op,
           res_vreg_ty, *input_vregs.begin(), 0);
       output_vregs.Fill(unpack_subelements_op.getResult());
     }
+  }
+  if (layout_in.implicit_dim() == VectorLayout::ImplicitDim::kMinor) {
+    output_vregs.Reshape(output_vregs_shape);
   }
   op.replaceAllUsesWith(assemble(builder, result_ty, layout_out,
                                  std::move(output_vregs), ctx.target_shape)
@@ -762,21 +770,30 @@ LogicalResult trunc_op_rule_impl(RewriteContext &ctx, OpTy op,
                                  const VectorLayout &layout_in,
                                  const VectorLayout &layout_out) {
   ImplicitLocOpBuilder builder(op.getLoc(), op.getOperation());
+  auto source = cast<TypedValue<VectorType>>(op.getIn());
+  const auto source_ty = source.getType();
   auto result_ty = cast<VectorType>(op.getResult().getType());
+  auto output_vregs_shape =
+      layout_out.tileArrayShape(result_ty.getShape(), ctx.target_shape);
   FAILUREOR_ASSIGN_OR_RETURN(
-      const xla::Array<Value> input_vregs,
-      disassemble(builder, layout_in, cast<TypedValue<VectorType>>(op.getIn()),
-                  ctx.target_shape));
-  xla::Array<Value> output_vregs(
-      layout_out.tileArrayShape(result_ty.getShape(), ctx.target_shape));
+      xla::Array<Value> input_vregs,
+      disassemble(builder, layout_in, source, ctx.target_shape));
+  xla::Array<Value> output_vregs(output_vregs_shape);
   if (layout_in.bitwidth() != 32) {
     return op.emitOpError("Not implemented: Only 32-bit truncation supported");
+  }
+  if (layout_in.implicit_dim() == VectorLayout::ImplicitDim::kMinor) {
+    input_vregs.Reshape(layout_in.tileArrayImplicitShape(source_ty.getShape(),
+                                                         ctx.target_shape));
+    output_vregs.Reshape(layout_out.tileArrayImplicitShape(result_ty.getShape(),
+                                                           ctx.target_shape));
   }
   FAILUREOR_ASSIGN_OR_RETURN(
       VectorType res_vreg_ty,
       getNativeVregType(result_ty.getElementType(), ctx.target_shape));
-  if (layout_in.implicit_dim() == VectorLayout::ImplicitDim::kNone &&
-      layout_out.implicit_dim() == VectorLayout::ImplicitDim::kNone) {
+  if (layout_in.implicit_dim() == layout_out.implicit_dim() &&
+      (layout_in.implicit_dim() == VectorLayout::ImplicitDim::kNone ||
+       layout_in.implicit_dim() == VectorLayout::ImplicitDim::kMinor)) {
     if (layout_in.tiling() != ctx.target_shape) {
       return op.emitOpError("Not implemented: Only (8,128) tiling supported");
     }
@@ -820,6 +837,9 @@ LogicalResult trunc_op_rule_impl(RewriteContext &ctx, OpTy op,
       });
     } else {
       return op.emitOpError("Not implemented: unsupported output tiling");
+    }
+    if (layout_in.implicit_dim() == VectorLayout::ImplicitDim::kMinor) {
+      output_vregs.Reshape(output_vregs_shape);
     }
     op.replaceAllUsesWith(assemble(builder, result_ty, layout_out,
                                    std::move(output_vregs), ctx.target_shape)

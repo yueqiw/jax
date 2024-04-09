@@ -1353,7 +1353,8 @@ class VectorLayoutInferer {
                    "Only extensions to 32-bit supported");
     }
     auto &layout = *some_layout;
-    if (layout.implicit_dim() == ImplicitDim::kNone) {
+    if (layout.implicit_dim() == ImplicitDim::kNone ||
+        layout.implicit_dim() == ImplicitDim::kMinor) {
       // TODO(apaszke): Support native packed layouts here.
       Layout src_layout;
       Layout dst_layout;
@@ -1365,10 +1366,10 @@ class VectorLayoutInferer {
         src_layout = layout;
       } else {
         src_layout = VectorLayout(layout.bitwidth(), layout.offsets(),
-                                  default_tiling_, ImplicitDim::kNone);
+                                  default_tiling_, layout.implicit_dim());
       }
       dst_layout = VectorLayout(32, layout.offsets(), src_layout->tiling(),
-                                ImplicitDim::kNone);
+                                layout.implicit_dim());
       setLayout(op, src_layout, dst_layout);
       return success();
     }
@@ -1403,15 +1404,16 @@ class VectorLayoutInferer {
                    "Only 32-bit truncation supported");
     }
     auto &layout = *some_layout;
-    if (layout.implicit_dim() == ImplicitDim::kNone) {
+    if (layout.implicit_dim() == ImplicitDim::kNone ||
+        layout.implicit_dim() == ImplicitDim::kMinor) {
       bool select_native = allUsersRequireNativeTiling(op->getResult(0));
       auto src_layout = VectorLayout(32, layout.offsets(), default_tiling_,
-                                     ImplicitDim::kNone);
+                                     layout.implicit_dim());
       auto dst_layout = VectorLayout(
           dst_ty.getElementTypeBitWidth(), layout.offsets(),
           select_native ? nativeTiling(dst_ty.getElementTypeBitWidth())
                         : default_tiling_,
-          ImplicitDim::kNone);
+          layout.implicit_dim());
       setLayout(op, src_layout, dst_layout);
       return success();
     }
