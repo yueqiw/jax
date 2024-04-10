@@ -938,7 +938,6 @@ def _array_global_result_handler(global_aval, out_sharding, committed):
   )
 pxla.global_result_handlers[core.ShapedArray] = _array_global_result_handler
 pxla.global_result_handlers[core.ConcreteArray] = _array_global_result_handler
-pxla.global_result_handlers[core.AbstractToken] = lambda *_: lambda *_: core.token
 
 
 # Only used for Arrays that come out of pmap.

@@ -1940,18 +1940,38 @@ def _mutable_array_impl(init_val):
 
 
 class AbstractToken(AbstractValue):
+  __slots__ = ["shape", "dtype", "weak_type"]
+
+  def __init__(self):
+    self.shape = (0,)
+    self.dtype = np.dtype(np.bool_)
+    self.weak_type = False
+
   def join(self, other):
     if isinstance(other, AbstractToken):
       return self
     else:
       assert False, f"Cannot join {self} with {other}"
+
   def str_short(self, short_dtypes=False): return 'Tok'
+
   def at_least_vspace(self): return self
+
+
 abstract_token: AbstractToken = AbstractToken()
 
+
 # Concrete token object
-class Token: pass
-token: Token = Token()
+class Token:
+  _buf: Array
+
+  def __init__(self, buf):
+    self._buf = buf
+
+  def block_until_ready(self):
+    self._buf.block_until_ready()
+
+
 pytype_aval_mappings[Token] = lambda _: abstract_token
 
 
